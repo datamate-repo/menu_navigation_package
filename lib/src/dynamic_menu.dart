@@ -232,6 +232,21 @@ class DynamicMenu extends StatefulWidget {
   final bool showAppBar;
   final FocusNode? focusNode;
 
+  /// Optional widget shown on the left side of the split layout.
+  /// When provided, the menu sections are shown in a right-side panel
+  /// and this widget fills the remaining space on the left.
+  final Widget? dashboardWidget;
+
+  /// Width of the right-side menu panel when [dashboardWidget] is provided.
+  /// Defaults to 340.
+  final double menuPanelWidth;
+
+  /// Whether the menu panel starts on the left side.
+  final bool isMenuOnLeft;
+
+  /// Callback when the layout is swapped via drag and drop.
+  final Function(bool isMenuOnLeft)? onLayoutSwapped;
+
   final Color? backgroundColor;
   final Color? appBarColor;
   final Color? appBarTextColor;
@@ -255,6 +270,10 @@ class DynamicMenu extends StatefulWidget {
     required this.title,
     this.shortcuts = const {},
     this.showAppBar = true,
+    this.dashboardWidget,
+    this.menuPanelWidth = 340,
+    this.isMenuOnLeft = false,
+    this.onLayoutSwapped,
     this.backgroundColor,
     this.appBarColor,
     this.appBarTextColor,
@@ -284,11 +303,23 @@ class _DynamicMenuState extends State<DynamicMenu> {
   int _selectedSectionIndex = 0;
   int _selectedItemIndex = -1;
 
+  bool _isMenuOnLeft = false;
+  bool _isDragging = false;
+
   @override
   void initState() {
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
     _currentMenu = widget.menuData;
+    _isMenuOnLeft = widget.isMenuOnLeft;
+  }
+
+  @override
+  void didUpdateWidget(DynamicMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isMenuOnLeft != widget.isMenuOnLeft) {
+      _isMenuOnLeft = widget.isMenuOnLeft;
+    }
   }
 
   void _navigateToSubMenu(MenuItem item) {
@@ -415,44 +446,43 @@ class _DynamicMenuState extends State<DynamicMenu> {
         widget.buttonTextColor, textTh.bodyMedium?.color ?? Colors.black);
     final btnSelTxt = resolve(widget.buttonSelectedTextColor, cs.primary);
 
-    return KeyboardListener(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-        decoration: BoxDecoration(
-          color: bgColor,
-          boxShadow: const [
-            BoxShadow(
-              color: Color.fromRGBO(0, 0, 0, 0.1),
-              offset: Offset(-2, 0),
-              blurRadius: 15,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            if (_menuStack.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _navigateBack,
-                    icon: Icon(
-                      Icons.arrow_back,
-                      color: backIcon,
-                      size: 20,
-                    ),
-                    label: Text('Back', style: TextStyle(color: backTxt)),
+    // Build the scrollable menu panel (sections list)
+    final menuPanel = Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        color: bgColor,
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.1),
+            offset: Offset(-2, 0),
+            blurRadius: 15,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          if (_menuStack.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _navigateBack,
+                  icon: Icon(
+                    Icons.arrow_back,
+                    color: backIcon,
+                    size: 20,
                   ),
+                  label: Text('Back', style: TextStyle(color: backTxt)),
                 ),
               ),
-            for (final section in _currentMenu) ...[
-              MenuSectionWidget(
+            ),
+          for (int i = 0; i < _currentMenu.length; i++) ...[
+            Builder(builder: (context) {
+              final section = _currentMenu[i];
+              final sectionWidget = MenuSectionWidget(
                 section: section,
                 onPressed: _navigateToSubMenu,
                 selectedSectionIndex: _selectedSectionIndex,
@@ -468,11 +498,110 @@ class _DynamicMenuState extends State<DynamicMenu> {
                 scTxt: scTxt,
                 btnTxt: btnTxt,
                 btnSelTxt: btnSelTxt,
+              );
+
+              if (i == 0) {
+                return _SectionDraggableWrapper(
+                  panelWidth: widget.menuPanelWidth,
+                  onDragStarted: () => setState(() => _isDragging = true),
+                  onDragEnd: () => setState(() => _isDragging = false),
+                  child: sectionWidget,
+                );
+              }
+              return sectionWidget;
+            }),
+            const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    );
+
+    // Left panel: use provided dashboardWidget or fall back to the
+    // built-in placeholder so the split layout is ALWAYS two-panel.
+    final leftPanel = widget.dashboardWidget ??
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.dashboard_customize_outlined,
+                size: 56,
+                color: cs.primary,
               ),
               const SizedBox(height: 16),
+              Text(
+                'Dashboard',
+                style: textTh.titleLarge?.copyWith(
+                  color: cs.primary,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: GoogleFonts.poppins().fontFamily,
+                ),
+              ),
             ],
-          ],
-        ),
+          ),
+        );
+
+    final dropZone = DragTarget<String>(
+      onWillAccept: (data) => data == 'menuPanel',
+      onAccept: (data) {
+        setState(() {
+          _isMenuOnLeft = !_isMenuOnLeft;
+        });
+        if (widget.onLayoutSwapped != null) {
+          widget.onLayoutSwapped!(_isMenuOnLeft);
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: _isDragging ? const EdgeInsets.all(24) : EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: _isDragging
+                ? cs.primary.withOpacity(isHovered ? 0.1 : 0.02)
+                : Colors.transparent,
+            border: _isDragging
+                ? Border.all(
+                    color: isHovered ? cs.primary : cs.primary.withOpacity(0.3),
+                    width: 2,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(_isDragging ? 24 : 0),
+          ),
+          child: AnimatedOpacity(
+            opacity: _isDragging ? 0.5 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: AnimatedScale(
+              scale: isHovered ? 0.95 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              child: leftPanel,
+            ),
+          ),
+        );
+      },
+    );
+
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Row(
+        children: _isMenuOnLeft
+            ? [
+                SizedBox(
+                  width: widget.menuPanelWidth,
+                  child: menuPanel,
+                ),
+                Expanded(child: dropZone),
+              ]
+            : [
+                Expanded(child: dropZone),
+                SizedBox(
+                  width: widget.menuPanelWidth,
+                  child: menuPanel,
+                ),
+              ],
       ),
     );
   }
@@ -667,5 +796,107 @@ class _EscListenerPageState extends State<EscListenerPage> {
   void dispose() {
     _escKeyTimer?.cancel();
     super.dispose();
+  }
+}
+
+class _SectionDraggableWrapper extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragEnd;
+  final double panelWidth;
+
+  const _SectionDraggableWrapper({
+    required this.child,
+    required this.onDragStarted,
+    required this.onDragEnd,
+    required this.panelWidth,
+  });
+
+  @override
+  State<_SectionDraggableWrapper> createState() =>
+      _SectionDraggableWrapperState();
+}
+
+class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => setState(() => _isPressed = true),
+      onPointerUp: (_) => setState(() => _isPressed = false),
+      onPointerCancel: (_) => setState(() => _isPressed = false),
+      child: LongPressDraggable<String>(
+        data: 'menuPanel',
+        delay: const Duration(milliseconds: 250),
+        onDragStarted: () {
+          widget.onDragStarted();
+          HapticFeedback.heavyImpact();
+        },
+        onDragEnd: (_) {
+          setState(() => _isPressed = false);
+          widget.onDragEnd();
+        },
+        feedback: Material(
+          color: Colors.transparent,
+          child: SizedBox(
+            width: widget.panelWidth - 32, // account for ListView padding
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.95, end: 1.05),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              builder: (context, scale, child) {
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 10),
+                        )
+                      ],
+                    ),
+                    child: Opacity(
+                      opacity: 0.95,
+                      child: widget.child,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.2, // Leave a ghost of the section behind
+          child: widget.child,
+        ),
+        child: AnimatedScale(
+          scale: _isPressed ? 0.96 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: _isPressed
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 5),
+                      )
+                    ]
+                  : [],
+            ),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
   }
 }
