@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -305,6 +306,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
 
   bool _isMenuOnLeft = false;
   bool _isDragging = false;
+  bool _isFirstSectionPressed = false;
 
   @override
   void initState() {
@@ -505,10 +507,34 @@ class _DynamicMenuState extends State<DynamicMenu> {
                   panelWidth: widget.menuPanelWidth,
                   onDragStarted: () => setState(() => _isDragging = true),
                   onDragEnd: () => setState(() => _isDragging = false),
+                  onPressedStateChanged: (pressed) =>
+                      setState(() => _isFirstSectionPressed = pressed),
                   child: sectionWidget,
                 );
               }
-              return sectionWidget;
+
+              // Blur and fade other items when the first section is pressed
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(
+                      begin: 0.0, end: _isFirstSectionPressed ? 4.0 : 0.0),
+                  duration: const Duration(milliseconds: 200),
+                  builder: (context, blurValue, child) {
+                    if (blurValue == 0.0) return child!;
+                    return ImageFiltered(
+                      imageFilter: ImageFilter.blur(
+                          sigmaX: blurValue, sigmaY: blurValue),
+                      child: child,
+                    );
+                  },
+                  child: AnimatedOpacity(
+                    opacity: _isFirstSectionPressed ? 0.4 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: sectionWidget,
+                  ),
+                ),
+              );
             }),
             const SizedBox(height: 16),
           ],
@@ -559,7 +585,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
             // Render the dashboard widget normally without distorting it
             Positioned.fill(child: leftPanel),
 
-            // Overlay a placeholder shadow showing exactly where the menu panel will snap
+            // Overlay glow + Drop Here label
             if (_isDragging)
               Positioned(
                 left: _isMenuOnLeft ? null : 0,
@@ -571,24 +597,49 @@ class _DynamicMenuState extends State<DynamicMenu> {
                     duration: const Duration(milliseconds: 200),
                     width: widget.menuPanelWidth,
                     decoration: BoxDecoration(
-                      color: isHovered
-                          ? cs.primary.withOpacity(0.1)
-                          : cs.primary.withOpacity(0.03),
-                      border: Border(
-                        left: _isMenuOnLeft
-                            ? BorderSide(
-                                color: isHovered
-                                    ? cs.primary
-                                    : cs.primary.withOpacity(0.3),
-                                width: 2)
-                            : BorderSide.none,
-                        right: !_isMenuOnLeft
-                            ? BorderSide(
-                                color: isHovered
-                                    ? cs.primary
-                                    : cs.primary.withOpacity(0.3),
-                                width: 2)
-                            : BorderSide.none,
+                      color: cs.primary.withOpacity(isHovered ? 0.08 : 0.02),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.primary.withOpacity(isHovered ? 0.3 : 0.1),
+                          blurRadius: 40,
+                          spreadRadius: isHovered ? 15 : 5,
+                        ),
+                      ],
+                    ),
+                    child: AnimatedOpacity(
+                      opacity: isHovered ? 1.0 : 0.5,
+                      duration: const Duration(milliseconds: 200),
+                      child: Center(
+                        child: AnimatedScale(
+                          scale: isHovered ? 1.1 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOutCubic,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isHovered
+                                    ? Icons.south_rounded
+                                    : Icons.swap_horiz_rounded,
+                                size: 36,
+                                color: cs.primary
+                                    .withOpacity(isHovered ? 0.9 : 0.5),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                isHovered ? 'Release to drop' : 'Drop here',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                  color: cs.primary
+                                      .withOpacity(isHovered ? 0.9 : 0.5),
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -603,22 +654,37 @@ class _DynamicMenuState extends State<DynamicMenu> {
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
-      child: Row(
-        children: _isMenuOnLeft
-            ? [
-                SizedBox(
-                  width: widget.menuPanelWidth,
-                  child: menuPanel,
-                ),
-                Expanded(child: dropZone),
-              ]
-            : [
-                Expanded(child: dropZone),
-                SizedBox(
-                  width: widget.menuPanelWidth,
-                  child: menuPanel,
-                ),
-              ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalWidth = constraints.maxWidth;
+          final panelWidth = widget.menuPanelWidth;
+          final dropZoneWidth = totalWidth - panelWidth;
+
+          return Stack(
+            children: [
+              // Dashboard Panel
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOutCubic,
+                top: 0,
+                bottom: 0,
+                left: _isMenuOnLeft ? panelWidth : 0,
+                width: dropZoneWidth,
+                child: dropZone,
+              ),
+              // Menu Panel
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOutCubic,
+                top: 0,
+                bottom: 0,
+                left: _isMenuOnLeft ? 0 : dropZoneWidth,
+                width: panelWidth,
+                child: menuPanel,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -820,12 +886,14 @@ class _SectionDraggableWrapper extends StatefulWidget {
   final Widget child;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnd;
+  final ValueChanged<bool> onPressedStateChanged;
   final double panelWidth;
 
   const _SectionDraggableWrapper({
     required this.child,
     required this.onDragStarted,
     required this.onDragEnd,
+    required this.onPressedStateChanged,
     required this.panelWidth,
   });
 
@@ -837,12 +905,19 @@ class _SectionDraggableWrapper extends StatefulWidget {
 class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
   bool _isPressed = false;
 
+  void _setPressed(bool pressed) {
+    if (_isPressed != pressed) {
+      setState(() => _isPressed = pressed);
+      widget.onPressedStateChanged(pressed);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Listener(
-      onPointerDown: (_) => setState(() => _isPressed = true),
-      onPointerUp: (_) => setState(() => _isPressed = false),
-      onPointerCancel: (_) => setState(() => _isPressed = false),
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
       child: LongPressDraggable<String>(
         data: 'menuPanel',
         delay: const Duration(milliseconds: 250),
@@ -851,7 +926,7 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
           HapticFeedback.heavyImpact();
         },
         onDragEnd: (_) {
-          setState(() => _isPressed = false);
+          _setPressed(false);
           widget.onDragEnd();
         },
         feedback: Material(
@@ -902,10 +977,10 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
               boxShadow: _isPressed
                   ? [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 15,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 5),
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 30,
+                        spreadRadius: 8,
+                        offset: Offset.zero,
                       )
                     ]
                   : [],
