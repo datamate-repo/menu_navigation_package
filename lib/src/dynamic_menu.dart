@@ -554,30 +554,47 @@ class _DynamicMenuState extends State<DynamicMenu> {
       builder: (context, candidateData, rejectedData) {
         final isHovered = candidateData.isNotEmpty;
 
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: _isDragging ? const EdgeInsets.all(24) : EdgeInsets.zero,
-          decoration: BoxDecoration(
-            color: _isDragging
-                ? cs.primary.withOpacity(isHovered ? 0.1 : 0.02)
-                : Colors.transparent,
-            border: _isDragging
-                ? Border.all(
-                    color: isHovered ? cs.primary : cs.primary.withOpacity(0.3),
-                    width: 2,
-                  )
-                : null,
-            borderRadius: BorderRadius.circular(_isDragging ? 24 : 0),
-          ),
-          child: AnimatedOpacity(
-            opacity: _isDragging ? 0.5 : 1.0,
-            duration: const Duration(milliseconds: 200),
-            child: AnimatedScale(
-              scale: isHovered ? 0.95 : 1.0,
-              duration: const Duration(milliseconds: 200),
-              child: leftPanel,
-            ),
-          ),
+        return Stack(
+          children: [
+            // Render the dashboard widget normally without distorting it
+            Positioned.fill(child: leftPanel),
+
+            // Overlay a placeholder shadow showing exactly where the menu panel will snap
+            if (_isDragging)
+              Positioned(
+                left: _isMenuOnLeft ? null : 0,
+                right: _isMenuOnLeft ? 0 : null,
+                top: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: widget.menuPanelWidth,
+                    decoration: BoxDecoration(
+                      color: isHovered
+                          ? cs.primary.withOpacity(0.1)
+                          : cs.primary.withOpacity(0.03),
+                      border: Border(
+                        left: _isMenuOnLeft
+                            ? BorderSide(
+                                color: isHovered
+                                    ? cs.primary
+                                    : cs.primary.withOpacity(0.3),
+                                width: 2)
+                            : BorderSide.none,
+                        right: !_isMenuOnLeft
+                            ? BorderSide(
+                                color: isHovered
+                                    ? cs.primary
+                                    : cs.primary.withOpacity(0.3),
+                                width: 2)
+                            : BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
