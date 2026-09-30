@@ -3,10 +3,12 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'overflow_aware_text.dart';
 import 'snackbar_manager.dart';
+import 'wall_playground.dart';
 
 class MenuSection {
   final String title;
@@ -248,6 +250,22 @@ class DynamicMenu extends StatefulWidget {
   /// Callback when the layout is swapped via drag and drop.
   final Function(bool isMenuOnLeft)? onLayoutSwapped;
 
+  /// Which tab is shown initially: 0 = Dashboard, 1 = Wall.
+  /// Defaults to 0 (Dashboard).
+  final int initialTab;
+
+  /// Called when the user switches between Dashboard (0) and Wall (1).
+  final void Function(int tabIndex)? onTabChanged;
+
+  final List<CanvasItem>? initialItems;
+  final List<Stroke>? initialStrokes;
+  final void Function(List<CanvasItem> items)? onItemsChanged;
+  final void Function(List<Stroke> strokes)? onStrokesChanged;
+  final void Function(bool isDrawing)? onDrawingModeChanged;
+
+  /// Called when the user clicks a top-level menu section.
+  final void Function(int sectionIndex)? onMenuSectionSelected;
+
   final Color? backgroundColor;
   final Color? appBarColor;
   final Color? appBarTextColor;
@@ -275,6 +293,8 @@ class DynamicMenu extends StatefulWidget {
     this.menuPanelWidth = 340,
     this.isMenuOnLeft = false,
     this.onLayoutSwapped,
+    this.initialTab = 0,
+    this.onTabChanged,
     this.backgroundColor,
     this.appBarColor,
     this.appBarTextColor,
@@ -291,6 +311,12 @@ class DynamicMenu extends StatefulWidget {
     this.buttonTextColor,
     this.buttonSelectedTextColor,
     this.focusNode,
+    this.initialItems,
+    this.initialStrokes,
+    this.onItemsChanged,
+    this.onStrokesChanged,
+    this.onDrawingModeChanged,
+    this.onMenuSectionSelected,
   });
 
   @override
@@ -303,10 +329,14 @@ class _DynamicMenuState extends State<DynamicMenu> {
   late List<MenuSection> _currentMenu;
   int _selectedSectionIndex = 0;
   int _selectedItemIndex = -1;
+  int _selectedTab = 0;
 
   bool _isMenuOnLeft = false;
   bool _isDragging = false;
   bool _isFirstSectionPressed = false;
+
+  List<CanvasItem>? _cachedItems;
+  List<Stroke>? _cachedStrokes;
 
   @override
   void initState() {
@@ -314,6 +344,9 @@ class _DynamicMenuState extends State<DynamicMenu> {
     _focusNode = widget.focusNode ?? FocusNode();
     _currentMenu = widget.menuData;
     _isMenuOnLeft = widget.isMenuOnLeft;
+    _selectedTab = widget.initialTab.clamp(0, 1);
+    _cachedItems = widget.initialItems;
+    _cachedStrokes = widget.initialStrokes;
   }
 
   @override
@@ -341,6 +374,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
       });
     } else if (item.onTap != null) {
       widget.onMenuItemSelected(item);
+      widget.onMenuSectionSelected?.call(_selectedSectionIndex);
       item.onTap?.call();
     } else if (item.subMenu != null && item.subMenu!.isEmpty) {
       showCustomSnackBar(
@@ -349,6 +383,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
           type: SnackBarType.alert);
     } else {
       widget.onMenuItemSelected(item);
+      widget.onMenuSectionSelected?.call(_selectedSectionIndex);
     }
   }
 
@@ -542,9 +577,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
       ),
     );
 
-    // Left panel: use provided dashboardWidget or fall back to the
-    // built-in placeholder so the split layout is ALWAYS two-panel.
-    final leftPanel = widget.dashboardWidget ??
+    final dashboardContent = widget.dashboardWidget ??
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -566,6 +599,56 @@ class _DynamicMenuState extends State<DynamicMenu> {
             ],
           ),
         );
+
+    final leftPanel = Stack(
+      children: [
+        Positioned.fill(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _selectedTab == 0
+                ? dashboardContent
+                : WallPlayground(
+                    initialItems: _cachedItems,
+                    initialStrokes: _cachedStrokes,
+                    onItemsChanged: (items) {
+                      _cachedItems = items;
+                      widget.onItemsChanged?.call(items);
+                    },
+                    onStrokesChanged: (strokes) {
+                      _cachedStrokes = strokes;
+                      widget.onStrokesChanged?.call(strokes);
+                    },
+                    onDrawingModeChanged: widget.onDrawingModeChanged,
+                  ),
+          ),
+        ),
+        Positioned(
+          top: 16,
+          left: 16,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: cs.surface.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: cs.onSurface.withOpacity(0.1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildTabButton('Dashboard', 0, cs),
+                    _buildTabButton('Wall', 1, cs),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
 
     final dropZone = DragTarget<String>(
       onWillAccept: (data) => data == 'menuPanel',
@@ -695,6 +778,45 @@ class _DynamicMenuState extends State<DynamicMenu> {
       _focusNode.dispose();
     }
     super.dispose();
+  }
+
+  Widget _buildTabButton(String title, int index, ColorScheme cs) {
+    final isSelected = _selectedTab == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTab = index;
+        });
+        widget.onTabChanged?.call(index);
+        HapticFeedback.selectionClick();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? cs.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 1),
+                  )
+                ]
+              : [],
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            color: isSelected ? cs.primary : cs.onSurface.withOpacity(0.6),
+            fontFamily: GoogleFonts.poppins().fontFamily,
+          ),
+        ),
+      ),
+    );
   }
 }
 
