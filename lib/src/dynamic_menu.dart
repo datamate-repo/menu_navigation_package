@@ -333,7 +333,6 @@ class _DynamicMenuState extends State<DynamicMenu> {
 
   bool _isMenuOnLeft = false;
   bool _isDragging = false;
-  bool _isFirstSectionPressed = false;
   bool _isDrawingMode = false;
 
   List<CanvasItem>? _cachedItems;
@@ -348,6 +347,16 @@ class _DynamicMenuState extends State<DynamicMenu> {
     _selectedTab = widget.initialTab.clamp(0, 1);
     _cachedItems = widget.initialItems;
     _cachedStrokes = widget.initialStrokes;
+    _loadLayoutPreference();
+  }
+
+  Future<void> _loadLayoutPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('dynamic_menu_is_on_left')) {
+      setState(() {
+        _isMenuOnLeft = prefs.getBool('dynamic_menu_is_on_left') ?? false;
+      });
+    }
   }
 
   @override
@@ -559,8 +568,6 @@ class _DynamicMenuState extends State<DynamicMenu> {
                   panelWidth: widget.menuPanelWidth,
                   onDragStarted: () => setState(() => _isDragging = true),
                   onDragEnd: () => setState(() => _isDragging = false),
-                  onPressedStateChanged: (pressed) =>
-                      setState(() => _isFirstSectionPressed = pressed),
                   feedbackWidget: Container(
                     width: widget.menuPanelWidth,
                     height: MediaQuery.of(context).size.height,
@@ -650,12 +657,12 @@ class _DynamicMenuState extends State<DynamicMenu> {
                     ),
                   ),
                   child: sectionWidget,
-                  forceHighlight: _isFirstSectionPressed || _isDragging,
+                  forceHighlight: _isDragging,
                 );
               }
 
-              // Blur and fade other items when the first section is pressed or dragging
-              final isDimmed = _isFirstSectionPressed || _isDragging;
+              // Blur and fade other items when dragging
+              final isDimmed = _isDragging;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 child: TweenAnimationBuilder<double>(
@@ -741,13 +748,15 @@ class _DynamicMenuState extends State<DynamicMenu> {
 
     final dropZone = DragTarget<String>(
       onWillAccept: (data) => data == 'menuPanel',
-      onAccept: (data) {
+      onAccept: (data) async {
         setState(() {
           _isMenuOnLeft = !_isMenuOnLeft;
         });
         if (widget.onLayoutSwapped != null) {
           widget.onLayoutSwapped!(_isMenuOnLeft);
         }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('dynamic_menu_is_on_left', _isMenuOnLeft);
       },
       builder: (context, candidateData, rejectedData) {
         final isHovered = candidateData.isNotEmpty;
@@ -1166,7 +1175,6 @@ class _SectionDraggableWrapper extends StatefulWidget {
   final Widget feedbackWidget;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnd;
-  final ValueChanged<bool> onPressedStateChanged;
   final double panelWidth;
   final bool forceHighlight;
 
@@ -1175,7 +1183,6 @@ class _SectionDraggableWrapper extends StatefulWidget {
     required this.feedbackWidget,
     required this.onDragStarted,
     required this.onDragEnd,
-    required this.onPressedStateChanged,
     required this.panelWidth,
     this.forceHighlight = false,
   });
@@ -1186,22 +1193,10 @@ class _SectionDraggableWrapper extends StatefulWidget {
 }
 
 class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
-  bool _isPressed = false;
-
-  void _setPressed(bool pressed) {
-    if (_isPressed != pressed) {
-      setState(() => _isPressed = pressed);
-      widget.onPressedStateChanged(pressed);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: (_) => _setPressed(true),
-      onPointerUp: (_) => _setPressed(false),
-      onPointerCancel: (_) => _setPressed(false),
-      child: LongPressDraggable<String>(
+    return LongPressDraggable<String>(
         data: 'menuPanel',
         delay: const Duration(milliseconds: 250),
         onDragStarted: () {
@@ -1209,7 +1204,6 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
           HapticFeedback.heavyImpact();
         },
         onDragEnd: (_) {
-          _setPressed(false);
           widget.onDragEnd();
         },
         feedback: Material(
@@ -1249,14 +1243,14 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
           child: widget.child,
         ),
         child: AnimatedScale(
-          scale: _isPressed || widget.forceHighlight ? 0.96 : 1.0,
+          scale: widget.forceHighlight ? 0.96 : 1.0,
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              boxShadow: _isPressed || widget.forceHighlight
+              boxShadow: widget.forceHighlight
                   ? [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.15),
@@ -1270,7 +1264,6 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
             child: widget.child,
           ),
         ),
-      ),
     );
   }
 }

@@ -298,9 +298,10 @@ class _WallPlaygroundState extends State<WallPlayground> {
           child: FadeTransition(
             opacity: curved,
             child: Center(
-              child: _IosAlertDialog(
+              child: _WebAlertDialog(
                 title: 'Clear Wall',
                 message: 'All notes and drawings will be permanently removed.',
+                confirmText: 'Clear',
                 onCancel: () => Navigator.of(ctx).pop(false),
                 onConfirm: () => Navigator.of(ctx).pop(true),
               ),
@@ -925,9 +926,10 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
           child: FadeTransition(
             opacity: curved,
             child: Center(
-              child: _IosAlertDialog(
+              child: _WebAlertDialog(
                 title: 'Delete Note',
                 message: 'This note will be permanently removed from your wall.',
+                confirmText: 'Delete',
                 onCancel: () => Navigator.of(ctx).pop(false),
                 onConfirm: () => Navigator.of(ctx).pop(true),
               ),
@@ -1152,17 +1154,19 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
   }
 }
 
-// ─── iOS 18-style Alert Dialog ───────────────────────────────────────────────
+// ─── Web-style Alert Dialog ───────────────────────────────────────────────
 
-class _IosAlertDialog extends StatelessWidget {
+class _WebAlertDialog extends StatelessWidget {
   final String title;
   final String message;
+  final String confirmText;
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
 
-  const _IosAlertDialog({
+  const _WebAlertDialog({
     required this.title,
     required this.message,
+    required this.confirmText,
     required this.onCancel,
     required this.onConfirm,
   });
@@ -1171,119 +1175,94 @@ class _IosAlertDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-          child: Container(
-          width: 270,
-          decoration: BoxDecoration(
-            // iOS frosted glass — slightly warm white with high opacity
-            color: const Color(0xF5FFFFFF),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 40,
-                spreadRadius: 0,
-                offset: const Offset(0, 10),
+      child: Container(
+        width: 380,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 32,
+              spreadRadius: 4,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1E1E1E),
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Title + Message
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-                child: Column(
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF000000),
-                        letterSpacing: -0.4,
-                      ),
+            ),
+            const SizedBox(height: 12),
+            // Message
+            Text(
+              message,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: const Color(0xFF5A5A5A),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 32),
+            // Buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Cancel Button
+                TextButton(
+                  onPressed: onCancel,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      message,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        color: const Color(0xFF3C3C43).withOpacity(0.6),
-                        letterSpacing: -0.1,
-                        height: 1.4,
-                      ),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF5A5A5A),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              // Top horizontal divider
-              Container(height: 0.5, color: const Color(0xFF3C3C43).withOpacity(0.22)),
-              // Buttons
-              IntrinsicHeight(
-                child: Row(
-                  children: [
-                    // Cancel
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: onCancel,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          color: Colors.transparent,
-                          child: Text(
-                            'Cancel',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w400,
-                              color: const Color(0xFF007AFF), // iOS blue
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
-                      ),
+                const SizedBox(width: 12),
+                // Confirm Button (Destructive)
+                ElevatedButton(
+                  onPressed: onConfirm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626), // Web-style red
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    // Vertical divider
-                    Container(
-                      width: 0.5,
-                      color: const Color(0xFF3C3C43).withOpacity(0.22),
+                  ),
+                  child: Text(
+                    confirmText,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
-                    // Delete
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: onConfirm,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          color: Colors.transparent,
-                          child: Text(
-                            'Delete',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFFF3B30), // iOS destructive red
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
-    ),
-  );
+    );
   }
 }
