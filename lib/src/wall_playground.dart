@@ -1,3 +1,5 @@
+import 'dart:js' as js;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,15 +11,17 @@ class Stroke {
   Color color; // mutable so theme-toggle can flip it
   final double strokeWidth;
   final bool isThemeColor; // true = drawn with auto theme color (black/white)
+  final bool isEraser;
 
   Stroke(this.points, this.color, this.strokeWidth,
-      {this.isThemeColor = false});
+      {this.isThemeColor = false, this.isEraser = false});
   Map<String, dynamic> toJson() {
     return {
       'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
       'color': color.value,
       'strokeWidth': strokeWidth,
       'isThemeColor': isThemeColor,
+      'isEraser': isEraser,
     };
   }
 
@@ -30,6 +34,7 @@ class Stroke {
       Color((json['color'] as num).toInt()),
       (json['strokeWidth'] as num).toDouble(),
       isThemeColor: json['isThemeColor'] ?? false,
+      isEraser: json['isEraser'] ?? false,
     );
   }
 }
@@ -92,24 +97,7 @@ class CanvasItem {
   }
 }
 
-// ─── Undo/Redo action types ──────────────────────────────────────────────────
-
-abstract class CanvasAction {}
-
-class AddNoteAction extends CanvasAction {
-  final CanvasItem item;
-  AddNoteAction(this.item);
-}
-
-class RemoveNoteAction extends CanvasAction {
-  final CanvasItem item;
-  RemoveNoteAction(this.item);
-}
-
-class AddStrokeAction extends CanvasAction {
-  final Stroke stroke;
-  AddStrokeAction(this.stroke);
-}
+// ─── Undo/Redo removed ───────────────────────────────────────────────────────
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
 
@@ -149,6 +137,8 @@ class _WallPlaygroundState extends State<WallPlayground> {
 
   bool _isDarkMesh = false;
   bool _isDrawingMode = false;
+  bool _isEraserMode = false;
+  double _eraserSize = 20.0;
   int _maxZIndex = 0;
 
   @override
@@ -189,74 +179,78 @@ class _WallPlaygroundState extends State<WallPlayground> {
     Color(0xFFFF4081),
   ];
 
-  // ── Undo / Redo ──
-  final List<CanvasAction> _undoStack = [];
-  final List<CanvasAction> _redoStack = [];
+  // Undo/Redo removed
 
   // ── Note colors ──
   final List<Color> _noteColors = [
-    const Color(0xFFFFF7D1),
-    const Color(0xFFD4F0F0),
-    const Color(0xFFF3E8FF),
-    const Color(0xFFFFE4E1),
-    const Color(0xFFDDF5DF),
+    // Yellows & Oranges
+    const Color(0xFFFFF7D1), // classic sticky yellow
+    const Color(0xFFFFE0A3), // warm peach
+    const Color(0xFFFFCB77), // golden amber
+    const Color(0xFFFFD4A8), // soft apricot
+    // Pinks & Reds
+    const Color(0xFFFFE4E1), // blush rose
+    const Color(0xFFFFB3C1), // bubblegum pink
+    const Color(0xFFFFCDD2), // soft red
+    const Color(0xFFF8BBD0), // dusty pink
+    // Greens
+    const Color(0xFFDDF5DF), // mint green
+    const Color(0xFFB7E4C7), // sage
+    const Color(0xFFCCF2D4), // fresh lime
+    const Color(0xFFD4EDDA), // seafoam
+    // Blues & Purples
+    const Color(0xFFD4F0F0), // sky blue
+    const Color(0xFFBBDEFB), // powder blue
+    const Color(0xFFF3E8FF), // lavender
+    const Color(0xFFE1BEE7), // soft violet
   ];
+
   int _colorIndex = 0;
 
   // Always black draw color unless user picked a custom one
   Color get _activeDrawColor =>
       _customColorSelected ? _drawColor : Colors.black;
 
-  // ── Undo/Redo helpers ─────────────────────────────────────────────────────
-
-  void _pushUndo(CanvasAction action) {
-    _undoStack.add(action);
-    _redoStack.clear();
-  }
-
-  void _undo() {
-    if (_undoStack.isEmpty) return;
-    final action = _undoStack.removeLast();
-    setState(() {
-      if (action is AddNoteAction) {
-        _items.removeWhere((i) => i.id == action.item.id);
-        _redoStack.add(action);
-      } else if (action is RemoveNoteAction) {
-        _items.add(action.item);
-        _items.sort((a, b) => a.zIndex.compareTo(b.zIndex));
-        _redoStack.add(action);
-      } else if (action is AddStrokeAction) {
-        _strokes.remove(action.stroke);
-        _redoStack.add(action);
-      }
-    });
-    _notifyItems();
-    _notifyStrokes();
-    HapticFeedback.lightImpact();
-  }
-
-  void _redo() {
-    if (_redoStack.isEmpty) return;
-    final action = _redoStack.removeLast();
-    setState(() {
-      if (action is AddNoteAction) {
-        _items.add(action.item);
-        _items.sort((a, b) => a.zIndex.compareTo(b.zIndex));
-        _undoStack.add(action);
-      } else if (action is RemoveNoteAction) {
-        _items.removeWhere((i) => i.id == action.item.id);
-        _undoStack.add(action);
-      } else if (action is AddStrokeAction) {
-        _strokes.add(action.stroke);
-        _undoStack.add(action);
-      }
-    });
-    _notifyItems();
-    _notifyStrokes();
-    HapticFeedback.lightImpact();
-  }
+  // Undo logic removed
 
   // ── Actions ───────────────────────────────────────────────────────────────
+
+  // ── iOS-style pop sound via Web Audio API ──────────────────────────────
+  void _playPopSound() {
+    try {
+      js.context.callMethod('eval', [
+        '''
+        (function() {
+          try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            // First tone: high
+            var o1 = ctx.createOscillator();
+            var g1 = ctx.createGain();
+            o1.connect(g1); g1.connect(ctx.destination);
+            o1.type = 'sine';
+            o1.frequency.setValueAtTime(1200, ctx.currentTime);
+            o1.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.06);
+            g1.gain.setValueAtTime(0.18, ctx.currentTime);
+            g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+            o1.start(ctx.currentTime);
+            o1.stop(ctx.currentTime + 0.12);
+            // Second tone: low
+            var o2 = ctx.createOscillator();
+            var g2 = ctx.createGain();
+            o2.connect(g2); g2.connect(ctx.destination);
+            o2.type = 'sine';
+            o2.frequency.setValueAtTime(700, ctx.currentTime + 0.05);
+            o2.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.14);
+            g2.gain.setValueAtTime(0.12, ctx.currentTime + 0.05);
+            g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+            o2.start(ctx.currentTime + 0.05);
+            o2.stop(ctx.currentTime + 0.18);
+          } catch(e) {}
+        })();
+        '''
+      ]);
+    } catch (_) {}
+  }
 
   void _addNote() {
     final item = CanvasItem(
@@ -273,31 +267,86 @@ class _WallPlaygroundState extends State<WallPlayground> {
       _items.add(item);
       _colorIndex++;
     });
-    _pushUndo(AddNoteAction(item));
+    // Undo pushed here previously
     _notifyItems();
+    _playPopSound();
     HapticFeedback.mediumImpact();
   }
 
   void _clearCanvas() {
     if (_items.isEmpty && _strokes.isEmpty) return;
-    setState(() {
-      _items.clear();
-      _strokes.clear();
-      _undoStack.clear();
-      _redoStack.clear();
-      _isDrawingMode = false;
-      _showColorPicker = false;
-    });
-    _notifyItems();
-    _notifyStrokes();
-    widget.onDrawingModeChanged?.call(false);
-    HapticFeedback.heavyImpact();
+    _showClearConfirmation();
+  }
+
+  Future<void> _showClearConfirmation() async {
+    HapticFeedback.mediumImpact();
+    final confirmed = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withOpacity(0.35),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+      transitionBuilder: (ctx, anim, _, __) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.85, end: 1.0).animate(curved),
+          child: FadeTransition(
+            opacity: curved,
+            child: Center(
+              child: _IosAlertDialog(
+                title: 'Clear Wall',
+                message: 'All notes and drawings will be permanently removed.',
+                onCancel: () => Navigator.of(ctx).pop(false),
+                onConfirm: () => Navigator.of(ctx).pop(true),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed == true) {
+      setState(() {
+        _items.clear();
+        _strokes.clear();
+        _isDrawingMode = false;
+        _isEraserMode = false;
+        _showColorPicker = false;
+      });
+      _notifyItems();
+      _notifyStrokes();
+      widget.onDrawingModeChanged?.call(false);
+      HapticFeedback.heavyImpact();
+    }
   }
 
   void _toggleDrawMode() {
     setState(() {
-      _isDrawingMode = !_isDrawingMode;
-      if (!_isDrawingMode) _showColorPicker = false;
+      if (_isDrawingMode && !_isEraserMode) {
+        _isDrawingMode = false;
+      } else {
+        _isDrawingMode = true;
+        _isEraserMode = false;
+      }
+      _showColorPicker = false;
+    });
+    widget.onDrawingModeChanged?.call(_isDrawingMode);
+    HapticFeedback.selectionClick();
+  }
+
+  void _toggleEraserMode() {
+    setState(() {
+      if (_isDrawingMode && _isEraserMode) {
+        _isDrawingMode = false;
+      } else {
+        _isDrawingMode = true;
+        _isEraserMode = true;
+      }
+      _showColorPicker = false;
     });
     widget.onDrawingModeChanged?.call(_isDrawingMode);
     HapticFeedback.selectionClick();
@@ -323,7 +372,7 @@ class _WallPlaygroundState extends State<WallPlayground> {
     setState(() {
       _items.removeWhere((i) => i.id == id);
     });
-    _pushUndo(RemoveNoteAction(item));
+    // Undo pushed here previously
     _notifyItems();
     HapticFeedback.mediumImpact();
   }
@@ -385,10 +434,7 @@ class _WallPlaygroundState extends State<WallPlayground> {
               ),
             ),
 
-          // Canvas Items
-          ..._items.map((item) => _buildCanvasItem(item)),
-
-          // Drawing Render Layer
+          // Drawing Render Layer (moved below items)
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
@@ -406,9 +452,10 @@ class _WallPlaygroundState extends State<WallPlayground> {
                     _currentStroke = [details.localPosition];
                     _strokes.add(Stroke(
                       _currentStroke,
-                      _activeDrawColor,
-                      4.0,
-                      isThemeColor: !_customColorSelected,
+                      _isEraserMode ? Colors.transparent : _activeDrawColor,
+                      _isEraserMode ? _eraserSize : 4.0,
+                      isThemeColor: !_isEraserMode && !_customColorSelected,
+                      isEraser: _isEraserMode,
                     ));
                   });
                 },
@@ -418,9 +465,7 @@ class _WallPlaygroundState extends State<WallPlayground> {
                   });
                 },
                 onPanEnd: (details) {
-                  // Record completed stroke for undo
                   if (_strokes.isNotEmpty && _currentStroke.isNotEmpty) {
-                    _pushUndo(AddStrokeAction(_strokes.last));
                     _notifyStrokes();
                   }
                   setState(() => _currentStroke = []);
@@ -429,8 +474,14 @@ class _WallPlaygroundState extends State<WallPlayground> {
               ),
             ),
 
+          // Canvas Items
+          ..._items.map((item) => _buildCanvasItem(item)),
+
           // Color picker panel (only in draw mode)
-          if (_isDrawingMode && _showColorPicker) _buildColorPickerPanel(),
+          if (_isDrawingMode && !_isEraserMode && _showColorPicker)
+            _buildColorPickerPanel(),
+
+          if (_isDrawingMode && _isEraserMode) _buildEraserSizePanel(),
 
           // Toolbar — bottom center
           Positioned(
@@ -448,63 +499,121 @@ class _WallPlaygroundState extends State<WallPlayground> {
 
   Widget _buildColorPickerPanel() {
     return Positioned(
-        bottom: 90,
-        left: 0,
-        right: 0,
-        child: Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.85),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.black12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: _drawPalette.map((color) {
-                  final isSelected = _activeDrawColor == color;
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      _drawColor = color;
-                      _customColorSelected = true;
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: isSelected ? 24 : 18,
-                      height: isSelected ? 24 : 18,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? Colors.black45 : Colors.black12,
-                          width: isSelected ? 2 : 1,
-                        ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                    color: color.withOpacity(0.4),
-                                    blurRadius: 6,
-                                    spreadRadius: 1)
-                              ]
-                            : [],
+      bottom: 90,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.black12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: _drawPalette.map((color) {
+                final isSelected = _activeDrawColor == color;
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _drawColor = color;
+                    _customColorSelected = true;
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: isSelected ? 24 : 18,
+                    height: isSelected ? 24 : 18,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.black45 : Colors.black12,
+                        width: isSelected ? 2 : 1,
                       ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                  color: color.withOpacity(0.4),
+                                  blurRadius: 6,
+                                  spreadRadius: 1)
+                            ]
+                          : [],
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }).toList(),
             ),
           ),
-        ));
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEraserSizePanel() {
+    return Positioned(
+      bottom: 90,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: 200,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.black12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.blur_circular,
+                    size: 16, color: Colors.black54),
+                Expanded(
+                  child: SliderTheme(
+                    data: const SliderThemeData(
+                      thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape: RoundSliderOverlayShape(overlayRadius: 14),
+                      activeTrackColor: Colors.blueAccent,
+                      inactiveTrackColor: Colors.black12,
+                      thumbColor: Colors.blueAccent,
+                    ),
+                    child: Slider(
+                      value: _eraserSize,
+                      min: 10.0,
+                      max: 80.0,
+                      onChanged: (val) {
+                        setState(() {
+                          _eraserSize = val;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                const Icon(Icons.circle, size: 24, color: Colors.black54),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildGlassDock() {
@@ -534,20 +643,8 @@ class _WallPlaygroundState extends State<WallPlayground> {
             _buildDockButton(Icons.note_add_rounded, '+ Note', _addNote),
             _buildDockDivider(),
             _buildDrawButton(),
-            // Undo/Redo only visible in draw modeif wall is empty
-            if (_isDrawingMode) ...[
-              _buildDockDivider(),
-              _buildDockButton(
-                Icons.undo_rounded,
-                'Undo',
-                _undoStack.isEmpty ? null : _undo,
-              ),
-              _buildDockButton(
-                Icons.redo_rounded,
-                'Redo',
-                _redoStack.isEmpty ? null : _redo,
-              ),
-            ],
+            _buildDockDivider(),
+            _buildEraserButton(),
             _buildDockDivider(),
             _buildDockButton(Icons.delete_sweep_rounded, 'Clear', _clearCanvas,
                 isDestructive: true),
@@ -559,7 +656,7 @@ class _WallPlaygroundState extends State<WallPlayground> {
 
   /// Draw button — tap toggles draw mode; long-press opens color picker
   Widget _buildDrawButton() {
-    final isActive = _isDrawingMode;
+    final isActive = _isDrawingMode && !_isEraserMode;
     const color = Colors.black87;
     const activeColor = Colors.blueAccent;
     final btnColor = isActive ? activeColor : color;
@@ -606,6 +703,41 @@ class _WallPlaygroundState extends State<WallPlayground> {
             const SizedBox(width: 4),
             Text(
               'Draw',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                fontFamily: GoogleFonts.inter().fontFamily,
+                color: btnColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEraserButton() {
+    final isActive = _isDrawingMode && _isEraserMode;
+    const color = Colors.black87;
+    const activeColor = Colors.blueAccent;
+    final btnColor = isActive ? activeColor : color;
+
+    return GestureDetector(
+      onTap: _toggleEraserMode,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? activeColor.withOpacity(0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_fix_high_rounded, color: btnColor, size: 18),
+            const SizedBox(width: 4),
+            Text(
+              'Eraser',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -712,11 +844,13 @@ class DrawingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
     for (var stroke in strokes) {
       if (stroke.points.isEmpty) continue;
       if (stroke.points.length == 1) {
         final paint = Paint()
-          ..color = stroke.color
+          ..color = stroke.isEraser ? Colors.transparent : stroke.color
+          ..blendMode = stroke.isEraser ? BlendMode.clear : BlendMode.srcOver
           ..style = PaintingStyle.fill;
         canvas.drawCircle(stroke.points.first, stroke.strokeWidth / 2, paint);
         continue;
@@ -727,13 +861,15 @@ class DrawingPainter extends CustomPainter {
         path.lineTo(stroke.points[i].dx, stroke.points[i].dy);
       }
       final paint = Paint()
-        ..color = stroke.color
+        ..color = stroke.isEraser ? Colors.transparent : stroke.color
+        ..blendMode = stroke.isEraser ? BlendMode.clear : BlendMode.srcOver
         ..strokeWidth = stroke.strokeWidth
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round;
       canvas.drawPath(path, paint);
     }
+    canvas.restore();
   }
 
   @override
@@ -767,194 +903,387 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
   bool _isResizing = false;
   bool _isHoveringDelete = false;
   bool _isHoveringResize = false;
+  bool _isHoveringNote = false;
+
+  Future<void> _showDeleteConfirmation() async {
+    HapticFeedback.mediumImpact();
+    final confirmed = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withOpacity(0.35),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+      transitionBuilder: (ctx, anim, _, __) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.85, end: 1.0).animate(curved),
+          child: FadeTransition(
+            opacity: curved,
+            child: Center(
+              child: _IosAlertDialog(
+                title: 'Delete Note',
+                message: 'This note will be permanently removed from your wall.',
+                onCancel: () => Navigator.of(ctx).pop(false),
+                onConfirm: () => Navigator.of(ctx).pop(true),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed == true) widget.onRemove();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanStart: (details) {
-        widget.onTapDown();
-        setState(() => _isDragging = true);
-        HapticFeedback.selectionClick();
-      },
-      onPanUpdate: (details) {
-        widget.onDragUpdate(details.delta);
-      },
-      onPanEnd: (details) {
-        setState(() => _isDragging = false);
-        HapticFeedback.lightImpact();
-      },
-      child: Transform.rotate(
-        angle: widget.item.rotation,
-        child: AnimatedScale(
-          scale: _isDragging ? 1.04 : widget.item.scale,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutBack,
-          child: Container(
-            width: widget.item.width,
-            height: widget.item.height,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black
-                      .withOpacity(_isDragging || _isResizing ? 0.18 : 0.10),
-                  blurRadius: _isDragging || _isResizing ? 18 : 8,
-                  spreadRadius: 0,
-                  offset: Offset(0, _isDragging || _isResizing ? 8 : 3),
-                ),
-              ],
-              border: Border.all(
-                color: widget.item.color.withOpacity(0.5),
-                width: 1.5,
-              ),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  widget.item.color,
-                  Color.lerp(widget.item.color, Colors.black, 0.05)!,
-                ],
-              ),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Top adhesive fold shadow
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 35,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(2),
-                        topRight: Radius.circular(2),
-                      ),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.04),
-                          Colors.transparent,
-                        ],
-                      ),
+    return MouseRegion(
+        onEnter: (_) => setState(() => _isHoveringNote = true),
+        onExit: (_) => setState(() => _isHoveringNote = false),
+        child: GestureDetector(
+          onPanStart: (details) {
+            widget.onTapDown();
+            setState(() => _isDragging = true);
+            HapticFeedback.selectionClick();
+          },
+          onPanUpdate: (details) {
+            widget.onDragUpdate(details.delta);
+          },
+          onPanEnd: (details) {
+            setState(() => _isDragging = false);
+            HapticFeedback.lightImpact();
+          },
+          child: Transform.rotate(
+            angle: widget.item.rotation,
+            child: AnimatedScale(
+              scale: _isDragging ? 1.04 : widget.item.scale,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
+              child: Container(
+                width: widget.item.width,
+                height: widget.item.height,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    // Soft deep shadow
+                    BoxShadow(
+                      color: Colors.black.withOpacity(
+                          _isDragging || _isResizing ? 0.20 : 0.12),
+                      blurRadius: _isDragging || _isResizing ? 25 : 12,
+                      spreadRadius: 0,
+                      offset: Offset(0, _isDragging || _isResizing ? 12 : 6),
                     ),
-                  ),
-                ),
-                // Note Content
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 24, 14, 24),
-                    child: TextField(
-                      controller:
-                          TextEditingController(text: widget.item.content)
-                            ..selection = TextSelection.collapsed(
-                                offset: widget.item.content.length),
-                      onChanged: (val) {
-                        widget.item.content = val;
-                        widget.onChanged?.call(val);
-                      },
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Write a note...',
-                        hintStyle: TextStyle(color: Colors.black38),
-                      ),
-                      style: TextStyle(
-                        color: Colors.black87,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: GoogleFonts.kalam().fontFamily ??
-                            GoogleFonts.inter().fontFamily,
-                      ),
+                    // Sharp close shadow for crispness
+                    BoxShadow(
+                      color: Colors.black.withOpacity(
+                          _isDragging || _isResizing ? 0.10 : 0.05),
+                      blurRadius: _isDragging || _isResizing ? 10 : 4,
+                      spreadRadius: 0,
+                      offset: Offset(0, _isDragging || _isResizing ? 4 : 2),
                     ),
-                  ),
+                  ],
+                  // No colored border — clean look
+                  color: widget.item.color,
                 ),
-                // Delete Button
-                Positioned(
-                  top: -8,
-                  right: -8,
-                  child: MouseRegion(
-                    onEnter: (_) => setState(() => _isHoveringDelete = true),
-                    onExit: (_) => setState(() => _isHoveringDelete = false),
-                    child: GestureDetector(
-                      onTap: widget.onRemove,
-                      child: AnimatedScale(
-                        scale: _isHoveringDelete ? 1.15 : 1.0,
-                        duration: const Duration(milliseconds: 150),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.8),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              )
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Top adhesive fold shadow
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 35,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(2),
+                            topRight: Radius.circular(2),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.04),
+                              Colors.transparent,
                             ],
                           ),
-                          child: const Icon(Icons.close_rounded,
-                              size: 14, color: Colors.white),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                // ── Resize handle (bottom-right corner) ──
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.resizeDownRight,
-                    onEnter: (_) => setState(() => _isHoveringResize = true),
-                    onExit: (_) => setState(() => _isHoveringResize = false),
-                    child: GestureDetector(
-                      onPanStart: (_) {
-                        setState(() => _isResizing = true);
-                        HapticFeedback.selectionClick();
-                      },
-                      onPanUpdate: (details) {
-                        widget.onResize(details.delta);
-                      },
-                      onPanEnd: (_) {
-                        setState(() => _isResizing = false);
-                        HapticFeedback.lightImpact();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: _isHoveringResize || _isResizing
-                              ? Colors.black.withOpacity(0.12)
-                              : Colors.transparent,
-                          borderRadius: const BorderRadius.only(
-                            bottomRight: Radius.circular(30),
+                    // Note Content
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 24, 14, 24),
+                        child: TextField(
+                          controller:
+                              TextEditingController(text: widget.item.content)
+                                ..selection = TextSelection.collapsed(
+                                    offset: widget.item.content.length),
+                          onChanged: (val) {
+                            widget.item.content = val;
+                            widget.onChanged?.call(val);
+                          },
+                          maxLines: null,
+                          expands: true,
+                          textAlignVertical: TextAlignVertical.top,
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            filled: false,
+                            hoverColor: Colors.transparent,
+                            hintText: 'Write a note...',
+                            hintStyle: TextStyle(color: Colors.black38),
                           ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.open_in_full_rounded,
-                            size: 13,
-                            color: Colors.black.withOpacity(
-                                _isHoveringResize || _isResizing ? 0.5 : 0.2),
+                          style: TextStyle(
+                            color: Colors.black87,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            fontFamily: GoogleFonts.kalam().fontFamily ??
+                                GoogleFonts.inter().fontFamily,
                           ),
                         ),
                       ),
                     ),
-                  ),
+                    // Delete Button
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: IgnorePointer(
+                        ignoring: !_isHoveringNote,
+                        child: AnimatedOpacity(
+                          opacity: _isHoveringNote ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: MouseRegion(
+                            onEnter: (_) =>
+                                setState(() => _isHoveringDelete = true),
+                            onExit: (_) =>
+                                setState(() => _isHoveringDelete = false),
+                            child: GestureDetector(
+                              onTap: _showDeleteConfirmation,
+                              child: AnimatedScale(
+                                scale: _isHoveringDelete ? 1.15 : 1.0,
+                                duration: const Duration(milliseconds: 150),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.8),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.white, width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      )
+                                    ],
+                                  ),
+                                  child: const Icon(Icons.close_rounded,
+                                      size: 14, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // ── Resize handle (bottom-right corner) ──
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeDownRight,
+                        onEnter: (_) =>
+                            setState(() => _isHoveringResize = true),
+                        onExit: (_) =>
+                            setState(() => _isHoveringResize = false),
+                        child: GestureDetector(
+                          onPanStart: (_) {
+                            setState(() => _isResizing = true);
+                            HapticFeedback.selectionClick();
+                          },
+                          onPanUpdate: (details) {
+                            widget.onResize(details.delta);
+                          },
+                          onPanEnd: (_) {
+                            setState(() => _isResizing = false);
+                            HapticFeedback.lightImpact();
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: _isHoveringResize || _isResizing
+                                  ? Colors.black.withOpacity(0.12)
+                                  : Colors.transparent,
+                              borderRadius: const BorderRadius.only(
+                                bottomRight: Radius.circular(30),
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.open_in_full_rounded,
+                                size: 13,
+                                color: Colors.black.withOpacity(
+                                    _isHoveringResize || _isResizing
+                                        ? 0.5
+                                        : 0.2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
+          ),
+        ));
+  }
+}
+
+// ─── iOS 18-style Alert Dialog ───────────────────────────────────────────────
+
+class _IosAlertDialog extends StatelessWidget {
+  final String title;
+  final String message;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  const _IosAlertDialog({
+    required this.title,
+    required this.message,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: Container(
+          width: 270,
+          decoration: BoxDecoration(
+            // iOS frosted glass — slightly warm white with high opacity
+            color: const Color(0xF5FFFFFF),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 40,
+                spreadRadius: 0,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title + Message
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                child: Column(
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF000000),
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF3C3C43).withOpacity(0.6),
+                        letterSpacing: -0.1,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Top horizontal divider
+              Container(height: 0.5, color: const Color(0xFF3C3C43).withOpacity(0.22)),
+              // Buttons
+              IntrinsicHeight(
+                child: Row(
+                  children: [
+                    // Cancel
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onCancel,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          color: Colors.transparent,
+                          child: Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w400,
+                              color: const Color(0xFF007AFF), // iOS blue
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Vertical divider
+                    Container(
+                      width: 0.5,
+                      color: const Color(0xFF3C3C43).withOpacity(0.22),
+                    ),
+                    // Delete
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onConfirm,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          color: Colors.transparent,
+                          child: Text(
+                            'Delete',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFFF3B30), // iOS destructive red
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

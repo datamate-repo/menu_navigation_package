@@ -334,6 +334,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
   bool _isMenuOnLeft = false;
   bool _isDragging = false;
   bool _isFirstSectionPressed = false;
+  bool _isDrawingMode = false;
 
   List<CanvasItem>? _cachedItems;
   List<Stroke>? _cachedStrokes;
@@ -502,17 +503,33 @@ class _DynamicMenuState extends State<DynamicMenu> {
         children: [
           if (_menuStack.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(top: 4, bottom: 12),
+              child: SizedBox(
+                width: double.infinity,
                 child: TextButton.icon(
                   onPressed: _navigateBack,
-                  icon: Icon(
-                    Icons.arrow_back,
-                    color: backIcon,
-                    size: 20,
+                  style: TextButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    backgroundColor: backIcon.withOpacity(0.06),
                   ),
-                  label: Text('Back', style: TextStyle(color: backTxt)),
+                  icon: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: backIcon,
+                    size: 16,
+                  ),
+                  label: Text(
+                    'Back',
+                    style: TextStyle(
+                      color: backTxt,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      fontFamily: GoogleFonts.poppins().fontFamily,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -544,16 +561,106 @@ class _DynamicMenuState extends State<DynamicMenu> {
                   onDragEnd: () => setState(() => _isDragging = false),
                   onPressedStateChanged: (pressed) =>
                       setState(() => _isFirstSectionPressed = pressed),
+                  feedbackWidget: Container(
+                    width: widget.menuPanelWidth,
+                    height: MediaQuery.of(context).size.height,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    decoration: BoxDecoration(color: bgColor),
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        if (_menuStack.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: null,
+                                icon: Icon(
+                                  Icons.arrow_back,
+                                  color: backIcon,
+                                  size: 20,
+                                ),
+                                label: Text('Back', style: TextStyle(color: backTxt)),
+                              ),
+                            ),
+                          ),
+                        for (int j = 0; j < _currentMenu.length; j++) ...[
+                          if (j == 0)
+                            Transform.scale(
+                              scale: 0.96,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.15),
+                                      blurRadius: 30,
+                                      spreadRadius: 8,
+                                      offset: Offset.zero,
+                                    )
+                                  ],
+                                ),
+                                child: MenuSectionWidget(
+                                  section: _currentMenu[j],
+                                  onPressed: (_) {},
+                                  selectedSectionIndex: _selectedSectionIndex,
+                                  selectedItemIndex: _selectedItemIndex,
+                                  currentMenu: _currentMenu,
+                                  sectionColor: sectionColor,
+                                  btnBg: btnBg,
+                                  btnSelBg: btnSelBg,
+                                  btnBorder: btnBorder,
+                                  btnSelBorder: btnSelBorder,
+                                  scBg: scBg,
+                                  scSelBg: scSelBg,
+                                  scTxt: scTxt,
+                                  btnTxt: btnTxt,
+                                  btnSelTxt: btnSelTxt,
+                                ),
+                              ),
+                            )
+                          else
+                            ImageFiltered(
+                              imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                              child: Opacity(
+                                opacity: 0.4,
+                                child: MenuSectionWidget(
+                                  section: _currentMenu[j],
+                                  onPressed: (_) {},
+                                  selectedSectionIndex: _selectedSectionIndex,
+                                  selectedItemIndex: _selectedItemIndex,
+                                  currentMenu: _currentMenu,
+                                  sectionColor: sectionColor,
+                                  btnBg: btnBg,
+                                  btnSelBg: btnSelBg,
+                                  btnBorder: btnBorder,
+                                  btnSelBorder: btnSelBorder,
+                                  scBg: scBg,
+                                  scSelBg: scSelBg,
+                                  scTxt: scTxt,
+                                  btnTxt: btnTxt,
+                                  btnSelTxt: btnSelTxt,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 16),
+                        ],
+                      ],
+                    ),
+                  ),
                   child: sectionWidget,
+                  forceHighlight: _isFirstSectionPressed || _isDragging,
                 );
               }
 
-              // Blur and fade other items when the first section is pressed
+              // Blur and fade other items when the first section is pressed or dragging
+              final isDimmed = _isFirstSectionPressed || _isDragging;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 child: TweenAnimationBuilder<double>(
                   tween: Tween<double>(
-                      begin: 0.0, end: _isFirstSectionPressed ? 4.0 : 0.0),
+                      begin: 0.0, end: isDimmed ? 4.0 : 0.0),
                   duration: const Duration(milliseconds: 200),
                   builder: (context, blurValue, child) {
                     if (blurValue == 0.0) return child!;
@@ -564,7 +671,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
                     );
                   },
                   child: AnimatedOpacity(
-                    opacity: _isFirstSectionPressed ? 0.4 : 1.0,
+                    opacity: isDimmed ? 0.4 : 1.0,
                     duration: const Duration(milliseconds: 200),
                     child: sectionWidget,
                   ),
@@ -606,8 +713,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: _selectedTab == 0
-                ? dashboardContent
-                : WallPlayground(
+                ? WallPlayground(
                     initialItems: _cachedItems,
                     initialStrokes: _cachedStrokes,
                     onItemsChanged: (items) {
@@ -618,34 +724,17 @@ class _DynamicMenuState extends State<DynamicMenu> {
                       _cachedStrokes = strokes;
                       widget.onStrokesChanged?.call(strokes);
                     },
-                    onDrawingModeChanged: widget.onDrawingModeChanged,
-                  ),
+                    onDrawingModeChanged: (isDrawing) {
+                      widget.onDrawingModeChanged?.call(isDrawing);
+                    },
+                  )
+                : dashboardContent,
           ),
         ),
         Positioned(
           top: 16,
           left: 16,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: cs.surface.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withOpacity(0.1)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTabButton('Dashboard', 0, cs),
-                    _buildTabButton('Wall', 1, cs),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          child: _buildTabSwitcher(cs),
         ),
       ],
     );
@@ -778,6 +867,74 @@ class _DynamicMenuState extends State<DynamicMenu> {
       _focusNode.dispose();
     }
     super.dispose();
+  }
+
+  // ── iOS 18-style segmented control ───────────────────────────────────────
+  Widget _buildTabSwitcher(ColorScheme cs) {
+    const tabs = ['Wall', 'Dashboard'];
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5E5EA), // iOS system grey 5
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(tabs.length, (i) {
+          final isSelected = _selectedTab == i;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              setState(() => _selectedTab = i);
+              widget.onTabChanged?.call(i);
+              HapticFeedback.selectionClick();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeInOut,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: isSelected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x1F000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                        BoxShadow(
+                          color: Color(0x0A000000),
+                          blurRadius: 2,
+                          offset: Offset(0, 0),
+                        ),
+                      ]
+                    : [],
+              ),
+              child: Text(
+                tabs[i],
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected
+                      ? const Color(0xFF000000)
+                      : const Color(0xFF8E8E93), // iOS label / tertiary
+                  fontFamily: GoogleFonts.poppins().fontFamily,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
   }
 
   Widget _buildTabButton(String title, int index, ColorScheme cs) {
@@ -1006,17 +1163,21 @@ class _EscListenerPageState extends State<EscListenerPage> {
 
 class _SectionDraggableWrapper extends StatefulWidget {
   final Widget child;
+  final Widget feedbackWidget;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnd;
   final ValueChanged<bool> onPressedStateChanged;
   final double panelWidth;
+  final bool forceHighlight;
 
   const _SectionDraggableWrapper({
     required this.child,
+    required this.feedbackWidget,
     required this.onDragStarted,
     required this.onDragEnd,
     required this.onPressedStateChanged,
     required this.panelWidth,
+    this.forceHighlight = false,
   });
 
   @override
@@ -1054,7 +1215,7 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
         feedback: Material(
           color: Colors.transparent,
           child: SizedBox(
-            width: widget.panelWidth - 32, // account for ListView padding
+            width: widget.panelWidth, 
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0.95, end: 1.05),
               duration: const Duration(milliseconds: 200),
@@ -1064,7 +1225,6 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
                   scale: scale,
                   child: Container(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.15),
@@ -1076,7 +1236,7 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
                     ),
                     child: Opacity(
                       opacity: 0.95,
-                      child: widget.child,
+                      child: widget.feedbackWidget,
                     ),
                   ),
                 );
@@ -1089,14 +1249,14 @@ class _SectionDraggableWrapperState extends State<_SectionDraggableWrapper> {
           child: widget.child,
         ),
         child: AnimatedScale(
-          scale: _isPressed ? 0.96 : 1.0,
+          scale: _isPressed || widget.forceHighlight ? 0.96 : 1.0,
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              boxShadow: _isPressed
+              boxShadow: _isPressed || widget.forceHighlight
                   ? [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.15),
