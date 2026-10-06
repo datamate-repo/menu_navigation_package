@@ -1,4 +1,3 @@
-import 'dart:js' as js;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -215,42 +214,7 @@ class _WallPlaygroundState extends State<WallPlayground> {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  // ── iOS-style pop sound via Web Audio API ──────────────────────────────
-  void _playPopSound() {
-    try {
-      js.context.callMethod('eval', [
-        '''
-        (function() {
-          try {
-            var ctx = new (window.AudioContext || window.webkitAudioContext)();
-            // First tone: high
-            var o1 = ctx.createOscillator();
-            var g1 = ctx.createGain();
-            o1.connect(g1); g1.connect(ctx.destination);
-            o1.type = 'sine';
-            o1.frequency.setValueAtTime(1200, ctx.currentTime);
-            o1.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.06);
-            g1.gain.setValueAtTime(0.18, ctx.currentTime);
-            g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-            o1.start(ctx.currentTime);
-            o1.stop(ctx.currentTime + 0.12);
-            // Second tone: low
-            var o2 = ctx.createOscillator();
-            var g2 = ctx.createGain();
-            o2.connect(g2); g2.connect(ctx.destination);
-            o2.type = 'sine';
-            o2.frequency.setValueAtTime(700, ctx.currentTime + 0.05);
-            o2.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.14);
-            g2.gain.setValueAtTime(0.12, ctx.currentTime + 0.05);
-            g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-            o2.start(ctx.currentTime + 0.05);
-            o2.stop(ctx.currentTime + 0.18);
-          } catch(e) {}
-        })();
-        '''
-      ]);
-    } catch (_) {}
-  }
+
 
   void _addNote() {
     final item = CanvasItem(
@@ -269,7 +233,6 @@ class _WallPlaygroundState extends State<WallPlayground> {
     });
     // Undo pushed here previously
     _notifyItems();
-    _playPopSound();
     HapticFeedback.mediumImpact();
   }
 
