@@ -407,8 +407,21 @@ class _DynamicMenuState extends State<DynamicMenu> {
     }
   }
 
+  /// Returns true when the currently focused widget is a text-input field.
+  /// In that case we skip all shortcut processing so that typing in a sticky
+  /// note (or any other TextField) does not accidentally trigger menu actions.
+  bool _isTextFieldFocused() {
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null) return false;
+    // EditableText is the base class for TextField internals.
+    return focus.context?.widget is EditableText;
+  }
+
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
+      // ── Suppress shortcuts when a text field has keyboard focus ──
+      if (_isTextFieldFocused()) return;
+
       String key = event.logicalKey.keyLabel.toUpperCase();
 
       if (event.logicalKey.keyId >= LogicalKeyboardKey.numpad0.keyId &&
@@ -839,6 +852,23 @@ class _DynamicMenuState extends State<DynamicMenu> {
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
           final panelWidth = widget.menuPanelWidth;
+
+          // ── Mobile / narrow-screen layout ─────────────────────────────────
+          // When the viewport is too narrow to comfortably show both panels
+          // side-by-side (less than panelWidth + 200 logical pixels), switch
+          // to a stacked layout: dashboard fills the full width and the menu
+          // panel is presented as a persistent bottom sheet that the user can
+          // scroll.
+          final isMobile = totalWidth < panelWidth + 200;
+
+          if (isMobile) {
+            return _MobileLayout(
+              menuPanel: menuPanel,
+              dropZone: dropZone,
+            );
+          }
+
+          // ── Desktop side-by-side layout ───────────────────────────────────
           final dropZoneWidth = totalWidth - panelWidth;
 
           return Stack(
@@ -982,6 +1012,165 @@ class _DynamicMenuState extends State<DynamicMenu> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Mobile stacked layout ─────────────────────────────────────────────────────
+//
+// On narrow screens (phones / DevTools mobile emulation) the two panels no
+// longer sit side-by-side.  Instead the dashboard fills the full width and the
+// menu panel slides in from the bottom as a drag-up sheet.
+//
+// The tab switcher is kept in the dashboard area (top-left) as usual; a small
+// floating FAB-style handle at the bottom lets the user expand the menu sheet.
+
+class _MobileLayout extends StatefulWidget {
+  final Widget menuPanel;
+  final Widget dropZone;
+
+  const _MobileLayout({required this.menuPanel, required this.dropZone});
+
+  @override
+  State<_MobileLayout> createState() => _MobileLayoutState();
+}
+
+class _MobileLayoutState extends State<_MobileLayout>
+    with SingleTickerProviderStateMixin {
+  // Sheet is collapsed (showing only a handle) or expanded (full-height).
+  bool _menuOpen = false;
+
+  late final AnimationController _ctrl;
+  late final Animation<double> _slideAnim;
+
+  // Fraction of the screen height consumed by the open sheet.
+  static const double _openFraction = 0.65;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _slideAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleMenu() {
+    setState(() => _menuOpen = !_menuOpen);
+    _menuOpen ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalH = constraints.maxHeight;
+        final sheetH = totalH * _openFraction;
+        // Collapsed: only the handle pill (36 px) is visible above the fold.
+        const handleH = 52.0;
+
+        return Stack(
+          children: [
+            // ── Dashboard fills the full width ──
+            Positioned.fill(child: widget.dropZone),
+
+            // ── Sliding menu sheet ──
+            AnimatedBuilder(
+              animation: _slideAnim,
+              builder: (context, child) {
+                // When fully closed the sheet sits off-screen below, leaving
+                // only the handle visible.
+                final hiddenOffset = sheetH - handleH;
+                final dy = hiddenOffset * (1 - _slideAnim.value);
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: sheetH,
+                  child: Transform.translate(
+                    offset: Offset(0, dy),
+                    child: child,
+                  ),
+                );
+              },
+              child: GestureDetector(
+                onVerticalDragEnd: (details) {
+                  // Swipe up → open, swipe down → close.
+                  if (details.primaryVelocity != null) {
+                    if (details.primaryVelocity! < -200 && !_menuOpen) {
+                      _toggleMenu();
+                    } else if (details.primaryVelocity! > 200 && _menuOpen) {
+                      _toggleMenu();
+                    }
+                  }
+                },
+                child: Material(
+                  elevation: 16,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                  color: Colors.white,
+                  child: Column(
+                    children: [
+                      // ── Drag handle + "Menu" label ──
+                      GestureDetector(
+                        onTap: _toggleMenu,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          height: handleH,
+                          decoration: const BoxDecoration(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _menuOpen ? 'Close' : 'Menu',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black.withOpacity(0.45),
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // ── Scrollable menu content ──
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.zero,
+                          child: widget.menuPanel,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
