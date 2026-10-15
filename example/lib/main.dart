@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:menu_navigation/menu_navigation.dart';
 
 import 'data/services/addons_config_service.dart';
+import 'data/services/mock_auth_service.dart';
 import 'ui/mappers/addon_menu_mapper.dart';
 
 void main() {
@@ -46,12 +47,16 @@ class DemoHomePage extends StatefulWidget {
 
 class _DemoHomePageState extends State<DemoHomePage> {
   final AddonsConfigService _configService = AddonsConfigService();
-  final AddonMenuMapper _mapper = const AddonMenuMapper();
+  final MockAuthService _authService = const MockAuthService();
+  late final AddonMenuMapper _mapper;
   late final Future<MenuSection?> _addonsSectionFuture;
 
   @override
   void initState() {
     super.initState();
+    _mapper = AddonMenuMapper(
+      sessionContextProvider: () => _authService.getMockSessionContext(),
+    );
     _addonsSectionFuture = _loadAddons();
   }
 

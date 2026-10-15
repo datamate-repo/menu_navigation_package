@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../../domain/models/plugin_session_context.dart';
 
 /// Fallback widget rendered on non-web platforms (e.g., Windows desktop).
 class IFramePlatformWidget extends StatelessWidget {
   final String url;
   final String title;
+  final PluginSessionContext sessionContext;
 
   const IFramePlatformWidget({
     super.key,
     required this.url,
     required this.title,
+    required this.sessionContext,
   });
 
   @override
@@ -19,7 +22,7 @@ class IFramePlatformWidget extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: const BoxConstraints(maxWidth: 540),
           padding: const EdgeInsets.all(24.0),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -47,6 +50,14 @@ class IFramePlatformWidget extends StatelessWidget {
                 'Embedded HTML Iframes require Flutter Web runtime.\nTarget URL: $url',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Session Envelope Ready for Web: Company ${sessionContext.context.companyId} (${sessionContext.context.finYear})',
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.black45),
+                textAlign: TextAlign.center,
               ),
             ],
           ),

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Imprest Cash Plugin Test Harness</title>
+  <style>
+    :root {
+      --primary: #16367b;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .title-group h1 { font-size: 20px; font-weight: 700; color: var(--primary); }
+    .title-group p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-pending { background: #fef3c7; color: #b45309; }
+    .badge-active { background: #d1fae5; color: #065f46; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .card-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .card-value { font-size: 18px; font-weight: 700; color: var(--text-main); }
+    .token-box {
+      background: #0f172a;
+      color: #38bdf8;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 16px;
+      border-radius: 8px;
+      word-break: break-all;
+      max-height: 180px;
+      overflow-y: auto;
+      margin-bottom: 16px;
+    }
+    .claims-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .claims-table th, .claims-table td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .claims-table th { background: #f1f5f9; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title-group">
+      <h1>Imprest Cash Plugin (Mock Client)</h1>
+      <p>Embedded inside Accounts ERP Host</p>
+    </div>
+    <div id="statusBadge" class="badge badge-pending">
+      Waiting for INIT_SESSION...
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Active Company</div>
+      <div id="companyId" class="card-value">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Fiscal Year</div>
+      <div id="finYear" class="card-value">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Authenticated User</div>
+      <div id="userName" class="card-value">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Branch / Currency</div>
+      <div id="branchInfo" class="card-value">--</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 24px;">
+    <div class="card-title">Received Authorization JWT (Bearer)</div>
+    <div id="jwtTokenDisplay" class="token-box">Awaiting token from host postMessage...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Decoded JWT Claims Payload</div>
+    <table class="claims-table">
+      <thead>
+        <tr><th>Claim Key</th><th>Claim Value</th></tr>
+      </thead>
+      <tbody id="claimsBody">
+        <tr><td colspan="2" style="color: var(--text-muted); text-align: center;">No claims decoded yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // 1. Announce plugin readiness to host upon DOM load
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'PLUGIN_READY' }, '*');
+      }
+    });
+
+    // 2. Listen for session initialization from the Flutter host
+    window.addEventListener('message', (event) => {
+      const { type, payload } = event.data || {};
+
+      if (type === 'INIT_SESSION' && payload) {
+        document.getElementById('statusBadge').className = 'badge badge-active';
+        document.getElementById('statusBadge').innerText = 'Handshake Connected';
+
+        // Render context
+        const ctx = payload.context || {};
+        const user = payload.user || {};
+        const auth = payload.auth || {};
+
+        document.getElementById('companyId').innerText = ctx.companyId || '--';
+        document.getElementById('finYear').innerText = ctx.finYear || '--';
+        document.getElementById('userName').innerText = (user.name || '--') + ' (' + (user.role || '') + ')';
+        document.getElementById('branchInfo').innerText = (ctx.branchId || '--') + ' / ' + (ctx.currency || '--');
+
+        // Render raw JWT
+        const token = auth.token || '';
+        document.getElementById('jwtTokenDisplay').innerText = token;
+
+        // Decode JWT payload
+        if (token.includes('.')) {
+          try {
+            const base64Payload = token.split('.')[1];
+            const decodedJson = atob(base64Payload.replace(/-/g, '+').replace(/_/g, '/'));
+            const claims = JSON.parse(decodedJson);
+
+            const tbody = document.getElementById('claimsBody');
+            tbody.innerHTML = '';
+            for (const [key, val] of Object.entries(claims)) {
+              const tr = document.createElement('tr');
+              const tdKey = document.createElement('td');
+              tdKey.style.fontWeight = '600';
+              tdKey.innerText = key;
+              const tdVal = document.createElement('td');
+              tdVal.innerText = typeof val === 'object' ? JSON.stringify(val) : val;
+              tr.appendChild(tdKey);
+              tr.appendChild(tdVal);
+              tbody.appendChild(tr);
+            }
+          } catch (e) {
+            console.error('Error decoding claims:', e);
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
