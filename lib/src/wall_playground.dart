@@ -349,12 +349,18 @@ class _WallPlaygroundState extends State<WallPlayground> {
         children: [
           // Background — always light
           Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFF2F2F7), Color(0xFFE5E5EA)],
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFF2F2F7), Color(0xFFE5E5EA)],
+                  ),
                 ),
               ),
             ),
@@ -772,11 +778,13 @@ class _WallPlaygroundState extends State<WallPlayground> {
 
   Widget _buildCanvasItem(CanvasItem item) {
     return Positioned(
+      key: ValueKey('canvas_item_${item.id}'),
       left: item.position.dx,
       top: item.position.dy,
       child: IgnorePointer(
         ignoring: _isDrawingMode,
         child: DraggableStickyNote(
+          key: ValueKey('sticky_note_${item.id}'),
           item: item,
           onDragUpdate: (delta) {
             setState(() {
@@ -868,6 +876,62 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
   bool _isHoveringDelete = false;
   bool _isHoveringResize = false;
   bool _isHoveringNote = false;
+
+  late TextEditingController _textController;
+  late FocusNode _textFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.item.content);
+    // Position cursor at end on first open
+    _textController.selection =
+        TextSelection.collapsed(offset: _textController.text.length);
+    _textFocusNode = FocusNode();
+    _textFocusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_textFocusNode.hasFocus) {
+      if (widget.item.content != _textController.text) {
+        widget.item.content = _textController.text;
+        widget.onChanged?.call(_textController.text);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(DraggableStickyNote oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only sync the controller when the content was changed externally
+    // (e.g. loaded from storage), NOT while the user is actively typing,
+    // and never overwrite existing text in the controller with an empty string.
+    if (!_textFocusNode.hasFocus &&
+        widget.item.content != _textController.text) {
+      if (_textController.text.isNotEmpty && widget.item.content.isEmpty) {
+        widget.item.content = _textController.text;
+        widget.onChanged?.call(_textController.text);
+        return;
+      }
+      _textController.value = TextEditingValue(
+        text: widget.item.content,
+        selection:
+            TextSelection.collapsed(offset: widget.item.content.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.item.content != _textController.text) {
+      widget.item.content = _textController.text;
+      widget.onChanged?.call(_textController.text);
+    }
+    _textFocusNode.removeListener(_onFocusChange);
+    _textController.dispose();
+    _textFocusNode.dispose();
+    super.dispose();
+  }
 
   Future<void> _showDeleteConfirmation() async {
     HapticFeedback.mediumImpact();
@@ -985,10 +1049,11 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(14, 24, 14, 24),
                         child: TextField(
-                          controller:
-                              TextEditingController(text: widget.item.content)
-                                ..selection = TextSelection.collapsed(
-                                    offset: widget.item.content.length),
+                          controller: _textController,
+                          focusNode: _textFocusNode,
+                          onTapOutside: (_) {
+                            _textFocusNode.unfocus();
+                          },
                           onChanged: (val) {
                             widget.item.content = val;
                             widget.onChanged?.call(val);

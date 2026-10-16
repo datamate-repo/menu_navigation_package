@@ -407,14 +407,58 @@ class _DynamicMenuState extends State<DynamicMenu> {
     }
   }
 
-  /// Returns true when the currently focused widget is a text-input field.
-  /// In that case we skip all shortcut processing so that typing in a sticky
-  /// note (or any other TextField) does not accidentally trigger menu actions.
+  /// Returns true when a text-input field has keyboard focus.
+  ///
+  /// On Flutter Web the [KeyboardListener]'s focus node sometimes still shows
+  /// [hasPrimaryFocus] even while a [TextField] / [EditableText] inside the
+  /// widget tree is actively being edited (because the browser-level focus and
+  /// the Flutter logical focus can diverge slightly, especially when the text
+  /// field lives in a deeply nested child widget such as a sticky note).
+  ///
+  /// Strategy:
+  ///  1. If our listener node is **not** the primary focus, a text field has
+  ///     taken over.  Short-circuit immediately.
+  ///  2. Walk the entire focus scope tree and check every focused node's widget
+  ///     type.  This catches [EditableText] widgets regardless of depth.
+  ///  3. As a last resort on Flutter Web, inspect the focused node's [context]
+  ///     via [BuildContext.findAncestorStateOfType] to detect [EditableTextState].
   bool _isTextFieldFocused() {
-    final focus = FocusManager.instance.primaryFocus;
-    if (focus == null) return false;
-    // EditableText is the base class for TextField internals.
-    return focus.context?.widget is EditableText;
+    // If our KeyboardListener node has primary focus, no child widget is focused.
+    if (_focusNode.hasPrimaryFocus) return false;
+
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus == null || primaryFocus == _focusNode) return false;
+
+    // Walk the entire focus tree from the primary focus node upward,
+    // checking for EditableText / TextField widgets or focus node labels.
+    FocusNode? node = primaryFocus;
+    while (node != null) {
+      if (node.debugLabel != null &&
+          (node.debugLabel!.contains('EditableText') ||
+              node.debugLabel!.contains('TextField'))) {
+        return true;
+      }
+      final ctx = node.context;
+      if (ctx != null) {
+        try {
+          final widget = ctx.widget;
+          if (widget is EditableText ||
+              widget is TextField ||
+              widget is TextFormField ||
+              ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
+              ctx.findAncestorWidgetOfExactType<TextField>() != null ||
+              ctx.findAncestorWidgetOfExactType<TextFormField>() != null ||
+              ctx.findAncestorStateOfType<EditableTextState>() != null) {
+            return true;
+          }
+        } catch (_) {
+          // Context may be deactivated; ignore.
+        }
+      }
+      node = node.parent;
+    }
+
+    return false;
   }
 
   void _handleKeyEvent(KeyEvent event) {
