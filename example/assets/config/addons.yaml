@@ -1,0 +1,26 @@
+version: "1.0"
+addons:
+  # Case A: Addon with submenu
+  - id: "cash-addons"
+    label: "Cash Addons"
+    shortcut: "C"
+    subMenu:
+      - title: "Cash Operations"
+        items:
+          - id: "imprest-cash"
+            label: "Imprest Cash"
+            shortcut: "I"
+            url: "http://localhost:55874/hello-world"
+          - id: "imprest-cash-2"
+            label: "Imprest Cash 2"
+            shortcut: "U"
+            url: "http://localhost:55874/hello-world"
+          - id: "petty-cash"
+            label: "Petty Cash"
+            shortcut: "P"
+            url: "http://localhost:55874/petty-cash"
+  # Case B: Direct leaf addon (opens iframe directly)
+  - id: "addon-b"
+    label: "Addon B"
+    shortcut: "B"
+    url: "http://localhost:55874"

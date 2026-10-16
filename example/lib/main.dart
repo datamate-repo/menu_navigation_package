@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:menu_navigation/menu_navigation.dart';
 
+import 'data/services/addons_config_service.dart';
+import 'data/services/mock_auth_service.dart';
+import 'ui/mappers/addon_menu_mapper.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -42,9 +46,32 @@ class DemoHomePage extends StatefulWidget {
 }
 
 class _DemoHomePageState extends State<DemoHomePage> {
+  final AddonsConfigService _configService = AddonsConfigService();
+  final MockAuthService _authService = const MockAuthService();
+  late final AddonMenuMapper _mapper;
+  late final Future<MenuSection?> _addonsSectionFuture;
+
   @override
-  Widget build(BuildContext context) {
-    final List<MenuSection> menuData = [
+  void initState() {
+    super.initState();
+    _mapper = AddonMenuMapper(
+      sessionContextProvider: () => _authService.getMockSessionContext(),
+    );
+    _addonsSectionFuture = _loadAddons();
+  }
+
+  Future<MenuSection?> _loadAddons() async {
+    try {
+      final domainSection = await _configService.loadAddonsSection();
+      return _mapper.mapSection(domainSection);
+    } catch (e) {
+      debugPrint('Failed to load addons configuration: $e');
+      return null;
+    }
+  }
+
+  List<MenuSection> _getStaticSections(BuildContext context) {
+    return [
       MenuSection(
         title: 'Actions',
         items: [
@@ -96,53 +123,35 @@ class _DemoHomePageState extends State<DemoHomePage> {
         ],
       ),
     ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final staticSections = _getStaticSections(context);
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              color: Colors.white,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "BookKeeper Mock",
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.appThemeColorLight,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      "V 1.0.0",
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const VerticalDivider(width: 1),
-          SizedBox(
-            width: 450,
-            child: DynamicMenu(
-              title: 'Main Menu',
-              menuData: menuData,
-              onMenuItemSelected: (item) {
-                debugPrint('Selected: ${item.label}');
-              },
-            ),
-          ),
-        ],
+      body: FutureBuilder<MenuSection?>(
+        future: _addonsSectionFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          final addonsSection = snapshot.data;
+          final menuData = [
+            ...staticSections,
+            ?addonsSection,
+          ];
+
+          return DynamicMenu(
+            title: 'Main Menu',
+            menuData: menuData,
+            onMenuItemSelected: (item) {},
+          );
+        },
       ),
     );
   }
