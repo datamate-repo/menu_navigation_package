@@ -920,11 +920,10 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
   @override
   void didUpdateWidget(DraggableStickyNote oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // If the widget is for the same note and parent hasn't explicitly supplied
-    // different content, keep the controller's active text as the single source
-    // of truth. Never overwrite or clear typed text during parent rebuilds!
-    if (oldWidget.item.id == widget.item.id &&
-        oldWidget.item.content == widget.item.content) {
+    // 1. Controller text is ALWAYS the single source of truth!
+    // Never allow any parent rebuild, focus change, or external empty content
+    // to wipe out the user's active typed text.
+    if (_textController.text.isNotEmpty) {
       if (widget.item.content != _textController.text) {
         widget.item.content = _textController.text;
         widget.onChanged?.call(_textController.text);
@@ -932,16 +931,13 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
       return;
     }
 
-    // Only sync if content was explicitly updated from an external source
-    // and this text field does not currently have keyboard focus.
-    if (oldWidget.item.content != widget.item.content &&
-        !_textFocusNode.hasFocus) {
-      if (_textController.text != widget.item.content) {
-        _textController.value = TextEditingValue(
-          text: widget.item.content,
-          selection: TextSelection.collapsed(offset: widget.item.content.length),
-        );
-      }
+    // 2. Only if the controller is completely empty, and the widget has new non-empty
+    // content (e.g. initial load from storage), initialize the controller with it.
+    if (_textController.text.isEmpty && widget.item.content.isNotEmpty) {
+      _textController.value = TextEditingValue(
+        text: widget.item.content,
+        selection: TextSelection.collapsed(offset: widget.item.content.length),
+      );
     }
   }
 

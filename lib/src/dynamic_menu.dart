@@ -776,6 +776,7 @@ class _DynamicMenuState extends State<DynamicMenu> {
             duration: const Duration(milliseconds: 300),
             child: _selectedTab == 0
                 ? WallPlayground(
+                    key: const ValueKey('wall_playground_component'),
                     initialItems: _cachedItems,
                     initialStrokes: _cachedStrokes,
                     onItemsChanged: (items) {
