@@ -150,6 +150,20 @@ class _WallPlaygroundState extends State<WallPlayground> {
     }
   }
 
+  @override
+  void didUpdateWidget(WallPlayground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialItems != null &&
+        widget.initialItems != oldWidget.initialItems) {
+      final currentMap = {for (var item in _items) item.id: item};
+      for (var externalItem in widget.initialItems!) {
+        if (!currentMap.containsKey(externalItem.id)) {
+          _items.add(externalItem);
+        }
+      }
+    }
+  }
+
   // Notify parent of items change
   void _notifyItems() {
     widget.onItemsChanged?.call(List.unmodifiable(_items));
@@ -213,8 +227,6 @@ class _WallPlaygroundState extends State<WallPlayground> {
   // Undo logic removed
 
   // ── Actions ───────────────────────────────────────────────────────────────
-
-
 
   void _addNote() {
     final item = CanvasItem(
@@ -887,47 +899,57 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
     // Position cursor at end on first open
     _textController.selection =
         TextSelection.collapsed(offset: _textController.text.length);
-    _textFocusNode = FocusNode();
+    _textController.addListener(_onTextChanged);
+    _textFocusNode = FocusNode(debugLabel: 'StickyNote_TextField');
     _textFocusNode.addListener(_onFocusChange);
+  }
+
+  void _onTextChanged() {
+    if (widget.item.content != _textController.text) {
+      widget.item.content = _textController.text;
+      widget.onChanged?.call(_textController.text);
+    }
   }
 
   void _onFocusChange() {
     if (!_textFocusNode.hasFocus) {
-      if (widget.item.content != _textController.text) {
-        widget.item.content = _textController.text;
-        widget.onChanged?.call(_textController.text);
-      }
+      _onTextChanged();
     }
   }
 
   @override
   void didUpdateWidget(DraggableStickyNote oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only sync the controller when the content was changed externally
-    // (e.g. loaded from storage), NOT while the user is actively typing,
-    // and never overwrite existing text in the controller with an empty string.
-    if (!_textFocusNode.hasFocus &&
-        widget.item.content != _textController.text) {
-      if (_textController.text.isNotEmpty && widget.item.content.isEmpty) {
+    // If the widget is for the same note and parent hasn't explicitly supplied
+    // different content, keep the controller's active text as the single source
+    // of truth. Never overwrite or clear typed text during parent rebuilds!
+    if (oldWidget.item.id == widget.item.id &&
+        oldWidget.item.content == widget.item.content) {
+      if (widget.item.content != _textController.text) {
         widget.item.content = _textController.text;
         widget.onChanged?.call(_textController.text);
-        return;
       }
-      _textController.value = TextEditingValue(
-        text: widget.item.content,
-        selection:
-            TextSelection.collapsed(offset: widget.item.content.length),
-      );
+      return;
+    }
+
+    // Only sync if content was explicitly updated from an external source
+    // and this text field does not currently have keyboard focus.
+    if (oldWidget.item.content != widget.item.content &&
+        !_textFocusNode.hasFocus) {
+      if (_textController.text != widget.item.content) {
+        _textController.value = TextEditingValue(
+          text: widget.item.content,
+          selection: TextSelection.collapsed(offset: widget.item.content.length),
+        );
+      }
     }
   }
 
   @override
   void dispose() {
-    if (widget.item.content != _textController.text) {
-      widget.item.content = _textController.text;
-      widget.onChanged?.call(_textController.text);
-    }
+    _onTextChanged();
     _textFocusNode.removeListener(_onFocusChange);
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     _textFocusNode.dispose();
     super.dispose();
@@ -955,7 +977,8 @@ class _DraggableStickyNoteState extends State<DraggableStickyNote> {
             child: Center(
               child: _WebAlertDialog(
                 title: 'Delete Note',
-                message: 'This note will be permanently removed from your wall.',
+                message:
+                    'This note will be permanently removed from your wall.',
                 confirmText: 'Delete',
                 onCancel: () => Navigator.of(ctx).pop(false),
                 onConfirm: () => Navigator.of(ctx).pop(true),
@@ -1251,7 +1274,8 @@ class _WebAlertDialog extends StatelessWidget {
                 TextButton(
                   onPressed: onCancel,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1273,7 +1297,8 @@ class _WebAlertDialog extends StatelessWidget {
                     backgroundColor: const Color(0xFFDC2626), // Web-style red
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),

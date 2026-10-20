@@ -423,11 +423,8 @@ class _DynamicMenuState extends State<DynamicMenu> {
   ///  3. As a last resort on Flutter Web, inspect the focused node's [context]
   ///     via [BuildContext.findAncestorStateOfType] to detect [EditableTextState].
   bool _isTextFieldFocused() {
-    // If our KeyboardListener node has primary focus, no child widget is focused.
-    if (_focusNode.hasPrimaryFocus) return false;
-
     final primaryFocus = FocusManager.instance.primaryFocus;
-    if (primaryFocus == null || primaryFocus == _focusNode) return false;
+    if (primaryFocus == null) return false;
 
     // Walk the entire focus tree from the primary focus node upward,
     // checking for EditableText / TextField widgets or focus node labels.
@@ -435,7 +432,8 @@ class _DynamicMenuState extends State<DynamicMenu> {
     while (node != null) {
       if (node.debugLabel != null &&
           (node.debugLabel!.contains('EditableText') ||
-              node.debugLabel!.contains('TextField'))) {
+              node.debugLabel!.contains('TextField') ||
+              node.debugLabel!.contains('StickyNote'))) {
         return true;
       }
       final ctx = node.context;
